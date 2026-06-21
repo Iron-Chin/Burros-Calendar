@@ -178,9 +178,30 @@
 
   .banner{background:#fff6d6;border:1px solid #f3e3a8;border-radius:13px;padding:11px 13px;font-size:12.5px;color:#7a6a35;margin-bottom:12px;line-height:1.5}
   .banner b{color:#5e5026}
+
+  /* ---------- Login gate ---------- */
+  #loginGate{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px}
+  #loginGate .lg-card{background:var(--card);border-radius:24px;box-shadow:var(--shadow);padding:30px 24px;max-width:340px;width:100%;text-align:center}
+  #loginGate h2{margin:0 0 6px;font-size:25px}
+  #loginGate p{color:var(--ink-soft);font-size:14px;margin:0 0 20px;line-height:1.5}
+  #loginGate input{text-align:center;font-size:18px;margin-bottom:12px}
+  #loginGate button{width:100%;border:none;background:var(--accent);color:#fff;font-weight:800;font-size:16px;padding:14px;border-radius:13px;cursor:pointer}
+  #loginGate button:disabled{opacity:.6}
+  #loginGate .lg-err{color:#d6336c;font-size:12.5px;min-height:16px;margin-top:10px}
+  #loginGate .lg-hint{font-size:11.5px;color:#b3a9b0;margin-top:18px;line-height:1.55}
 </style>
 </head>
 <body>
+<div id="loginGate">
+  <div class="lg-card">
+    <h2>Burros Calendar 💛</h2>
+    <p>Enter your shared password to open your calendar.</p>
+    <input id="pwInput" type="password" placeholder="Shared password" autocomplete="current-password" />
+    <button id="pwBtn">Open</button>
+    <div class="lg-err" id="pwErr"></div>
+    <div class="lg-hint">First time opening it? The password you type here <b>becomes</b> your shared password — then tell your partner to use the same one on their phone.</div>
+  </div>
+</div>
 <div class="wrap">
   <header>
     <h1>Burros Calendar <span style="font-size:18px">💛</span></h1>
@@ -286,15 +307,25 @@ function tint(hex,a){ const h=hex.replace('#',''); const r=parseInt(h.substr(0,2
 /* ============================================================
    STORAGE LAYER  (Firebase if configured, else localStorage)
    ============================================================ */
-let store;
+let store, started=false;
 const usingFirebase = !FIREBASE_CONFIG.apiKey.startsWith("PASTE_");
+const SHARED_EMAIL = "us@burros-calendar.app"; // just an identifier — the real secret is the password you choose
+
+function startApp(){
+  if(started) return; started=true;
+  document.getElementById("loginGate").style.display="none";
+  store.onItems(items=>{ state.items=items; render(); });
+  store.onCats(cats=>{ state.customCats=cats; render(); });
+}
 
 async function initStore(){
   if(usingFirebase){
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
     const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const au = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const app = initializeApp(FIREBASE_CONFIG);
     const db = fs.getFirestore(app);
+    const auth = au.getAuth(app);
     store = {
       onItems(cb){ fs.onSnapshot(fs.collection(db,"items"), s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))); },
       onCats(cb){ fs.onSnapshot(fs.collection(db,"categories"), s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))); },
@@ -303,6 +334,27 @@ async function initStore(){
       remove(id){ return fs.deleteDoc(fs.doc(db,"items",id)); },
       addCat(c){ return fs.addDoc(fs.collection(db,"categories"), c); }
     };
+    const gate=document.getElementById("loginGate");
+    const pw=document.getElementById("pwInput"), err=document.getElementById("pwErr"), btn=document.getElementById("pwBtn");
+    au.onAuthStateChanged(auth, user=>{ if(user) startApp(); else gate.style.display="flex"; });
+    async function tryLogin(){
+      err.textContent=""; const p=pw.value;
+      if(p.length<6){ err.textContent="Password must be at least 6 characters."; return; }
+      btn.disabled=true; btn.textContent="Checking…";
+      try{ await au.signInWithEmailAndPassword(auth, SHARED_EMAIL, p); }
+      catch(e){
+        try{ await au.createUserWithEmailAndPassword(auth, SHARED_EMAIL, p); }
+        catch(e2){
+          if(e2.code==="auth/email-already-in-use") err.textContent="Incorrect password — try again.";
+          else if(e2.code==="auth/operation-not-allowed"||e2.code==="auth/configuration-not-found"||e2.code==="auth/admin-restricted-operation") err.textContent="Email/Password sign-in isn't switched on in Firebase yet.";
+          else if(e2.code==="auth/weak-password") err.textContent="Please choose a longer password (6+ characters).";
+          else err.textContent="Couldn't sign in. Check your connection and try again.";
+        }
+      }
+      btn.disabled=false; btn.textContent="Open";
+    }
+    btn.onclick=tryLogin;
+    pw.addEventListener("keydown", e=>{ if(e.key==="Enter") tryLogin(); });
   } else {
     const read=k=>JSON.parse(localStorage.getItem(k)||"[]");
     const write=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
@@ -317,9 +369,8 @@ async function initStore(){
       remove(id){ let a=read("items").filter(x=>x.id!==id); write("items",a); ping(); return Promise.resolve(); },
       addCat(c){ const a=read("cats"); a.push({id:"c"+Date.now(),...c}); write("cats",a); pingC(); return Promise.resolve(); }
     };
+    startApp();
   }
-  store.onItems(items=>{ state.items=items; render(); });
-  store.onCats(cats=>{ state.customCats=cats; render(); });
 }
 
 /* ============================================================
