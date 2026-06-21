@@ -78,10 +78,11 @@
   .detail-inner .cat{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;margin-bottom:9px;color:#5b4a52}
   .detail-inner .meta{margin:3px 0}
   .detail-inner .notes{margin-top:8px;white-space:pre-wrap}
-  .det-actions{display:flex;gap:8px;margin-top:13px}
+  .det-actions{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
   .det-actions button{border:none;border-radius:11px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}
   .btn-edit{background:var(--accent-soft);color:#c43c5e}
   .btn-del{background:#f6eef0;color:#9b8d93}
+  .btn-cal{background:#e7f0ff;color:#2f6fed;flex-basis:100%}
 
   /* Idea cards (coloured background) */
   .idea{border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
@@ -422,6 +423,7 @@ function itemRow(it){
       ${it.time?`<div class="meta">🕑 ${fmtTime(it.time)}</div>`:""}
       ${it.notes?`<div class="notes">📝 ${esc(it.notes)}</div>`:""}
       <div class="det-actions">
+        ${it.date?`<button class="btn-cal" data-act="ical">＋ Add to Apple Calendar</button>`:""}
         <button class="btn-edit" data-act="edit">Edit</button>
         <button class="btn-del" data-act="del">Delete</button>
       </div>
@@ -448,6 +450,7 @@ function renderIdeas(){
         ${it.date?`<div class="meta">📅 ${fmtDateNice(it.date)}</div>`:""}
         ${it.notes?`<div class="notes">📝 ${esc(it.notes)}</div>`:""}
         <div class="det-actions">
+          ${it.date?`<button class="btn-cal" data-act="ical">＋ Add to Apple Calendar</button>`:""}
           <button class="btn-edit" data-act="edit">Edit</button>
           <button class="btn-del" data-act="del">Delete</button>
         </div>
@@ -463,11 +466,59 @@ function bindList(){
     el.querySelector('[data-act="toggle"]').onclick=()=>{ state.openItem = state.openItem===id?null:id; render(); };
     const e=el.querySelector('[data-act="edit"]'); if(e) e.onclick=ev=>{ ev.stopPropagation(); openSheet(state.items.find(i=>i.id===id)); };
     const d=el.querySelector('[data-act="del"]'); if(d) d.onclick=ev=>{ ev.stopPropagation(); if(confirm("Delete this?")) store.remove(id); };
+    const c=el.querySelector('[data-act="ical"]'); if(c) c.onclick=ev=>{ ev.stopPropagation(); addToApple(state.items.find(i=>i.id===id)); };
   });
 }
 
 function emptyMsg(icon,t,s){ return `<div class="empty"><span class="big">${icon}</span><b>${t}</b><br>${s}</div>`; }
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------- Add to Apple Calendar (.ics) ---------- */
+function pad2(n){ return String(n).padStart(2,"0"); }
+function icsDate(d){ return d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate()); }
+function icsLocalDT(d){ return icsDate(d)+"T"+pad2(d.getHours())+pad2(d.getMinutes())+"00"; }
+function icsStamp(){ const d=new Date(); return d.getUTCFullYear()+pad2(d.getUTCMonth()+1)+pad2(d.getUTCDate())+"T"+pad2(d.getUTCHours())+pad2(d.getUTCMinutes())+pad2(d.getUTCSeconds())+"Z"; }
+function icsEsc(s){ return (s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n"); }
+
+function buildICS(it){
+  const sp=span(it); if(!sp) return null;
+  let dtStart, dtEnd;
+  if(sp.days>1){
+    dtStart="DTSTART;VALUE=DATE:"+icsDate(sp.start);
+    dtEnd="DTEND;VALUE=DATE:"+icsDate(addDays(sp.end,1));
+  } else if(it.time){
+    const [h,m]=it.time.split(":").map(Number);
+    const s=new Date(sp.start); s.setHours(h,m,0,0);
+    const e=new Date(s); e.setHours(e.getHours()+1);
+    dtStart="DTSTART:"+icsLocalDT(s);
+    dtEnd="DTEND:"+icsLocalDT(e);
+  } else {
+    dtStart="DTSTART;VALUE=DATE:"+icsDate(sp.start);
+    dtEnd="DTEND;VALUE=DATE:"+icsDate(addDays(sp.start,1));
+  }
+  return [
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Burros Calendar//EN","CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    "UID:"+(it.id||("e"+icsStamp()))+"@burros-calendar",
+    "DTSTAMP:"+icsStamp(),
+    dtStart, dtEnd,
+    "SUMMARY:"+icsEsc(it.title),
+    it.category?"CATEGORIES:"+icsEsc(it.category):null,
+    it.notes?"DESCRIPTION:"+icsEsc(it.notes):null,
+    "END:VEVENT","END:VCALENDAR"
+  ].filter(Boolean).join("\r\n");
+}
+
+function addToApple(it){
+  if(!it||!it.date) return;
+  const ics=buildICS(it); if(!ics) return;
+  const blob=new Blob([ics],{type:"text/calendar;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=(it.title||"event").replace(/[^\w]+/g,"_").slice(0,40)+".ics";
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); }, 1500);
+}
 
 /* ============================================================
    CALENDAR
