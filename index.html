@@ -410,7 +410,7 @@ function itemRow(it){
   const sp=span(it);
   let when="";
   if(it.date){ when = fmtDateNice(it.date); if(sp&&sp.days>1) when+=" · "+sp.days+"d"; else if(it.time) when=fmtTime(it.time)+" · "+when.split(" ").slice(1).join(" "); }
-  return `<div class="item ${open?'open':''}" data-id="${it.id}">
+  return `<div class="item ${open?'open':''}" data-id="${it.id}" style="background:${tint(col,.5)}">
     <div class="row" data-act="toggle">
       <span class="dot" style="background:${col}"></span>
       <span class="ttl">${esc(it.title)}</span>
