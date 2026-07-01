@@ -397,7 +397,9 @@ function render(){
 
 /* ---------- Events list ---------- */
 function renderEventsList(){
+  const today=new Date(); today.setHours(0,0,0,0);
   const evs = state.items.filter(i=>i.type==="event")
+    .filter(i=>{ const sp=span(i); return !sp || sp.end>=today; }) // hide events once their date has passed (multi-day: once the last day passes)
     .sort((a,b)=>(a.date||"9999").localeCompare(b.date||"9999") || (a.time||"").localeCompare(b.time||""));
   if(!evs.length){ main.innerHTML = emptyMsg("📅","No events yet.","Tap ＋ to add your first plan together."); return; }
   main.innerHTML = `<div class="list">${evs.map(itemRow).join("")}</div>`;
