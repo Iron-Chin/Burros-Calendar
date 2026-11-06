@@ -53,3 +53,24 @@ self.addEventListener('fetch', (e) => {
     )
   }
 })
+
+// Morning reminders (sent by the Burros reminders service at 8:00 on days with plans).
+self.addEventListener('push', (e) => {
+  let msg = { title: 'Burros Calendar', body: '' }
+  try {
+    msg = { ...msg, ...e.data.json() }
+  } catch {
+    /* plain text or nothing */
+  }
+  e.waitUntil(self.registration.showNotification(msg.title, { body: msg.body, tag: msg.tag || 'burros', data: { url: './' } }))
+})
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (wins[0]) return wins[0].focus()
+      return self.clients.openWindow('./')
+    })(),
+  )
+})
